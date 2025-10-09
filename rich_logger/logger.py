@@ -125,7 +125,7 @@ _console_state = {
 
 
 def get_console(
-    console: Optional[Console] = None,
+    cnsl: Optional[Console] = None,
     record: Optional[bool] = None,
     show_locals: Optional[bool] = None,
 ) -> Console:
@@ -144,15 +144,15 @@ def get_console(
     """
     global _console  # noqa: PLW0603
 
-    _log.trace(f"Entered get_console({console=})")
+    _log.trace(f"Entered get_console({cnsl=})")
 
     requested_record = _console_state["record"] if record is None else bool(record)
 
     created_new_console = False
 
-    if console is not None:
+    if cnsl is not None:
         _log.trace("\tUsing supplied console...")
-        _console = console
+        _console = cnsl
         _console_state["record"] = getattr(_console, "record", _console_state["record"])
     elif _console is None:
         _log.trace("\tNo shared console. Creating new instance...")
@@ -173,7 +173,7 @@ def get_console(
     )
 
     if (
-        console is not None
+        cnsl is not None
         or created_new_console
         or not _console_state["traceback_configured"]
         or requested_show_locals != previous_show_locals
@@ -513,7 +513,6 @@ def setup_logger(
         loguru.Logger: The configured logger.
     """
     global \
-        console, \
         _logger_instance, \
         _logger_config, \
         LOGS_DIR, \
