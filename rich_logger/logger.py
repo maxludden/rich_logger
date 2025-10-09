@@ -21,8 +21,9 @@ from __future__ import annotations
 import atexit
 import re
 import sys
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 
 import loguru
 from loguru import logger
@@ -44,6 +45,8 @@ from rich.traceback import install as tr_install
 from rich_gradient.rule import Rule
 from rich_gradient.text import Text
 
+from .config import LoggerConfig, load_config_from_env
+
 __all__ = [
     "get_console",
     "get_logger",
@@ -57,6 +60,7 @@ __all__ = [
     "RichSink",
     "on_exit",
     "setup",
+    "setup_logger",
     "read_run_from_file",
     "write_run_to_file",
     "increment_run_and_write_to_file",
@@ -141,6 +145,8 @@ def get_console(
 
 
 _console = get_console()
+_logger_instance: Optional[loguru.Logger] = None
+_logger_config: Optional[LoggerConfig] = None
 
 
 def get_progress(console: Optional[Console] = None) -> Progress:
@@ -248,6 +254,9 @@ def setup(console: Optional[Console] = None) -> Optional[int]:
     if not TRACK_RUN:
         console.print("[i #af99ff]Setup logger. Disabling run tracking.[/]")
         return None
+    run_parent = RUN_FILE.parent
+    if not run_parent.exists():
+        run_parent.mkdir(parents=True, exist_ok=True)
     if not RUN_FILE.exists():
         with open(RUN_FILE, "w", encoding="utf-8") as f:
             f.write("0")
