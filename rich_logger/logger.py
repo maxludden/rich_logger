@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 
 import loguru
 from loguru import logger
+from rich import get_console as get_rich_console
 from rich.console import Console
 from rich.errors import MarkupError
 from rich.panel import Panel
@@ -115,41 +116,83 @@ _log = logger.bind(file="logger")
 _log.remove()
 _log.add(sink="logs/trace.log", level="TRACE", format=PLAIN_FORMAT)
 
+_console: Console = get_rich_console()
+_console_state = {
+    "record": False,
+    "show_locals": False,
+    "traceback_configured": False,
+}
+
 
 def get_console(
     console: Optional[Console] = None,
-    record: bool = False,
-    show_locals: bool = False
+    record: Optional[bool] = None,
+    show_locals: Optional[bool] = None,
 ) -> Console:
     """
     Initialize and return a Rich console.
 
     Args:
-        record (bool): Whether to record console output.
-        show_locals (bool): Whether to show local variables in tracebacks.
-        console (Optional[Console]): An optional existing Rich console (unused).
+        console (Optional[Console]): An optional existing Rich console.
+        record (Optional[bool]): Whether to record console output. ``None`` keeps
+            the prior setting.
+        show_locals (Optional[bool]): Whether to show local variables in
+            tracebacks. ``None`` keeps the prior setting.
 
     Returns:
         Console: A configured Rich console.
     """
+    global _console  # noqa: PLW0603
+
     _log.trace(f"Entered get_console({console=})")
+
+    requested_record = _console_state["record"] if record is None else bool(record)
+
+    created_new_console = False
+
     if console is not None:
         _log.trace("\tUsing supplied console...")
         _console = console
+        _console_state["record"] = getattr(_console, "record", _console_state["record"])
+    elif _console is None:
+        _log.trace("\tNo shared console. Creating new instance...")
+        _console = Console(record=requested_record)
+        _console_state["record"] = requested_record
+        created_new_console = True
     else:
-        _log.trace("\tNo supplied console. Generating console...")
-        _console = Console(record=record)
-    tr_install(console=_console, show_locals=show_locals)
+        current_record = getattr(_console, "record", _console_state["record"])
+        if requested_record != current_record:
+            _log.trace("\tReconfiguring console recording state...")
+            _console = Console(record=requested_record)
+            created_new_console = True
+        _console_state["record"] = requested_record
+
+    previous_show_locals = _console_state["show_locals"]
+    requested_show_locals = (
+        previous_show_locals if show_locals is None else bool(show_locals)
+    )
+
+    if (
+        console is not None
+        or created_new_console
+        or not _console_state["traceback_configured"]
+        or requested_show_locals != previous_show_locals
+    ):
+        _log.trace("\tInstalling Rich traceback support...")
+        tr_install(console=_console, show_locals=requested_show_locals)
+        _console_state["traceback_configured"] = True
+        _console_state["show_locals"] = requested_show_locals
+
     _log.trace("Leaving [b #0f0]get_console[/][b #fff]()[/]...")
     return _console
 
 
-_console = get_console()
+console: Console = get_console()
 _logger_instance: Optional[loguru.Logger] = None
 _logger_config: Optional[LoggerConfig] = None
 
 
-def get_progress(console: Optional[Console] = None) -> Progress:
+def get_progress(cnsl: Optional[Console] = None) -> Progress:
     """
     Initialize and return a Rich progress bar.
 
@@ -158,8 +201,8 @@ def get_progress(console: Optional[Console] = None) -> Progress:
     Returns:
         Progress: A configured Rich progress bar.
     """
-    if console is None:
-        console = _console
+    if cnsl is None:
+        cnsl = _console
     progress = Progress(
         SpinnerColumn(spinner_name="point"),
         TextColumn("[progress.description]{task.description}"),
@@ -168,7 +211,7 @@ def get_progress(console: Optional[Console] = None) -> Progress:
         TimeElapsedColumn(),
         TimeRemainingColumn(),
         MofNCompleteColumn(),
-        console=console,
+        console=cnsl,
         expand=True,
         refresh_per_second=30,
         transient=True,
@@ -195,7 +238,6 @@ def find_cwd(
         if cwd == Path.home():
             break
     if verbose:
-        console = _console
         console.line(2)
         panel_title = Text(
             "Current Working Directory",
@@ -239,20 +281,20 @@ def trace_sink() -> Dict[str, Any]:
     }
 
 
-def setup(console: Optional[Console] = None) -> Optional[int]:
+def setup(cnsl: Optional[Console] = None) -> Optional[int]:
     """
     Setup the logger by creating necessary directories and files.
 
     Returns:
         Optional[int]: The run count (read from the run file), or None if run tracking is disabled.
     """
-    if console is None:
-        console = _console
+    if cnsl is None:
+        cnsl = console
     if not LOGS_DIR.exists():
-        LOGS_DIR.mkdir(parents=True)
-        console.print(f"Created Logs Directory: {LOGS_DIR}")
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        cnsl.print(f"Created Logs Directory: {LOGS_DIR}")
     if not TRACK_RUN:
-        console.print("[i #af99ff]Setup logger. Disabling run tracking.[/]")
+        cnsl.print("[i #af99ff]Setup logger. Disabling run tracking.[/]")
         return None
     run_parent = RUN_FILE.parent
     if not run_parent.exists():
@@ -260,26 +302,26 @@ def setup(console: Optional[Console] = None) -> Optional[int]:
     if not RUN_FILE.exists():
         with open(RUN_FILE, "w", encoding="utf-8") as f:
             f.write("0")
-            console.print("Created Run File, set to 0")
+            cnsl.print("Created Run File, set to 0")
     with open(RUN_FILE, "r", encoding="utf-8") as f:
         run = int(f.read())
     return run
 
 
-def read_run_from_file(console: Optional[Console] = None) -> Optional[int]:
+def read_run_from_file(cnsl: Optional[Console] = None) -> Optional[int]:
     """
     Read the run count from the run file.
 
     Returns:
         Optional[int]: The run count, or None if tracking is disabled.
     """
-    if console is None:
-        console = _console
+    if cnsl is None:
+        cnsl = _console
     if not TRACK_RUN:
         return None
-    console = get_console()
+    cnsl = get_console()
     if not RUN_FILE.exists():
-        console.print("[b #ff0000]Run File Not Found[/][i #ff9900] – Creating...[/]")
+        cnsl.print("[b #ff0000]Run File Not Found[/][i #ff9900] – Creating...[/]")
         setup()
     with open(RUN_FILE, "r", encoding="utf-8") as f:
         run = int(f.read())
@@ -287,7 +329,7 @@ def read_run_from_file(console: Optional[Console] = None) -> Optional[int]:
 
 
 def get_default_sinks(
-    console: Optional[Console],
+    cnsl: Optional[Console],
     run: Optional[int],
     level: int,
     padding: Tuple[int, int] = (0, 1),
@@ -302,12 +344,12 @@ def get_default_sinks(
     Returns:
         List[Dict[str, Any]]: A list of sink configuration dictionaries.
     """
-    if console is None:
-        console = _console
+    if cnsl is None:
+        cnsl = _console
     return [
         {
             "sink": RichSink(
-                console=console, run=run, record=False, padding=padding, expand=expand
+                cnsl=cnsl, run=run, record=False, padding=padding, expand=expand
             ),
             "format": "{message}",
             "level": max(level, _validate_level("INFO")),
@@ -341,9 +383,13 @@ def _validate_level(level: str | int) -> int:
         TypeError: If the log level is not a string or an integer.
         ValueError: If the log level is not valid.
     """
-    if isinstance(level, int) and (0 < level > 50):
-        raise ValueError(f"Log level integer must be between 0 and 50, got {level}.")
-    if isinstance(level, int) and (0 >= level >= 50):
+    if isinstance(level, bool):
+        raise TypeError("Boolean values are not valid log levels.")
+    if isinstance(level, int):
+        if level < 0 or level > 50:
+            raise ValueError(
+                f"Log level integer must be between 0 and 50 inclusive, got {level}."
+            )
         return level
     if not isinstance(level, str):
         raise TypeError(f"Log level must be a string or an integer, got {type(level)}.")
@@ -374,7 +420,7 @@ def _validate_level(level: str | int) -> int:
 
 
 def get_logger(
-    console: Optional[Console] = None,
+    cnsl: Optional[Console] = None,
     level: str | int = "INFO",
     verbose: bool = False,
     track_run: bool = True,
@@ -396,14 +442,14 @@ def get_logger(
     Returns:
         Logger: A configured Loguru logger.
     """
-    if console is None:
-        console = _console
+    if cnsl is None:
+        cnsl = _console
     run = read_run_from_file() if track_run else None
 
     # Validate the log level
     _level = _validate_level(level)
     sinks = get_default_sinks(
-        console=console, run=run, level=_level, padding=padding, expand=expand
+        cnsl=cnsl, run=run, level=_level, padding=padding, expand=expand
     )
     if additional_sinks:
         sinks.extend(additional_sinks)
@@ -451,6 +497,93 @@ def increment_run_and_write_to_file() -> Optional[int]:
     return run
 
 
+def setup_logger(
+    config: Optional[LoggerConfig | Mapping[str, Any]] = None,
+    **overrides: Any,
+) -> loguru.Logger:
+    """
+    Configure and return the shared loguru logger instance.
+
+    Args:
+        config: Optional :class:`LoggerConfig` instance or mapping of configuration
+            values.
+        **overrides: Keyword overrides applied on top of ``config``.
+
+    Returns:
+        loguru.Logger: The configured logger.
+    """
+    global \
+        console, \
+        _logger_instance, \
+        _logger_config, \
+        LOGS_DIR, \
+        RUN_FILE, \
+        TRACK_RUN, \
+        VERBOSE
+
+    if config is None:
+        candidate = load_config_from_env()
+    elif isinstance(config, Mapping):
+        candidate = LoggerConfig(**config)
+    elif isinstance(config, LoggerConfig):
+        candidate = replace(config)
+    else:
+        raise TypeError(
+            "setup_logger() expects a LoggerConfig, mapping, or None, "
+            f"received {type(config)!r}."
+        )
+
+    if overrides:
+        try:
+            candidate = replace(candidate, **overrides)
+        except TypeError as exc:  # pragma: no cover - dataclass validation suffices
+            raise TypeError(
+                "setup_logger() received unexpected configuration overrides."
+            ) from exc
+
+    def _resolve_dir(value: Optional[Path]) -> Path:
+        if value is None:
+            base = CWD / "logs"
+        else:
+            base = Path(value).expanduser()
+        # Ensure base is a Path and resolve relative paths against CWD explicitly
+        base = Path(base)
+        if not base.is_absolute():
+            base = CWD.joinpath(base)
+        return base.resolve()
+
+    def _resolve_run_file(value: Optional[Path], directory: Path) -> Path:
+        if value is None:
+            candidate_path = directory / "run.txt"
+        else:
+            candidate_path = Path(value).expanduser()
+            if not candidate_path.is_absolute():
+                candidate_path = directory / candidate_path
+        return candidate_path.resolve()
+
+    logs_dir_path = _resolve_dir(candidate.logs_dir)
+    run_file_path = _resolve_run_file(candidate.run_file, logs_dir_path)
+
+    candidate = replace(candidate, logs_dir=logs_dir_path, run_file=run_file_path)
+
+    if _logger_instance is not None and candidate == _logger_config:
+        return _logger_instance
+
+    cnsl = get_console(record=candidate.record, show_locals=candidate.show_locals)
+
+    VERBOSE = candidate.verbose
+    TRACK_RUN = candidate.track_run
+    LOGS_DIR = logs_dir_path
+    RUN_FILE = run_file_path
+
+    setup(cnsl=cnsl)
+
+    log = get_logger(cnsl=cnsl, **candidate.logger_kwargs())
+    _logger_instance = log
+    _logger_config = candidate
+    return log
+
+
 class RichSink:
     """
     A custom Loguru sink that uses Rich to print styled log messages.
@@ -495,7 +628,7 @@ class RichSink:
 
     def __init__(
         self,
-        console: Optional[Console] = None,
+        cnsl: Optional[Console] = None,
         track_run: bool = TRACK_RUN,
         run: Optional[int] = None,
         padding: Tuple[int, int] = (1, 2),
@@ -517,7 +650,7 @@ class RichSink:
             self.run = run
         else:
             self.run = None
-        self.console: Console = console or _console
+        self.console: Console = cnsl or _console
         if record:
             self.console.record = True
             self.record = True
@@ -616,14 +749,11 @@ def on_exit() -> None:
         run = int(run_file.read())
     trace_log_path = LOGS_DIR / "trace.log"
 
-    bar_str: str = f"{str('━'*15)}"
+    bar_str: str = f"{str('━' * 15)}"
     with open(trace_log_path, "a", encoding="utf-8") as trace_log_file:
         header = f"\n\n{bar_str} Run {run} {bar_str}\n"
         trace_log_file.write(header)
     # Process the log file line by line to build segments.
-
-
-
 
 
 atexit.register(on_exit)
@@ -631,13 +761,14 @@ atexit.register(on_exit)
 for _export_name in __all__:
     if _export_name not in globals():
         raise AttributeError(
-            f"Export '{_export_name}' is listed in __all__ but is not defined in rich_logger.logger."
+            f"Export '{_export_name}' is listed in __all__ but \
+is not defined in rich_logger.logger."
         )
 del _export_name
 
 if __name__ == "__main__":
     _console = get_console()
-    _logger: loguru.Logger = get_logger(console=_console, level="TRACE")
+    _logger: loguru.Logger = get_logger(cnsl=_console, level="TRACE")
     _console.clear()
     _console.line(2)
     _console.print(

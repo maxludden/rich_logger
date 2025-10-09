@@ -1,4 +1,4 @@
-# main.py
+""" main.py"""
 from rich_logger import log
 
 def main() -> None:
