@@ -1,5 +1,5 @@
 
-from rich_logger import log
+from rich_loguru import log
 
 
 def main() -> None:

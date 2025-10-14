@@ -1,5 +1,5 @@
 [project]
-name = "rich_logger"
+name = "rich-loguru"
 version = "0.1.0"
 description = "A Rich-enhanced drop-in replacement for loguru.logger"
 authors = [{ name = "Max Ludden", email = "dev@maxludden.com" }]

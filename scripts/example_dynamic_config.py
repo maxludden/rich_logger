@@ -7,10 +7,10 @@ from typing import Any
 
 import loguru
 
-import rich_logger.logger as logger_module
-from rich_logger import log, setup_logger
-from rich_logger.config import LoggerConfig
-from rich_logger.logger import get_console
+import rich_loguru.logger as logger_module
+from rich_loguru import log, setup_logger
+from rich_loguru.config import LoggerConfig
+from rich_loguru.logger import get_console
 
 
 def update_logger_config(**kwargs: Any) -> loguru.Logger:

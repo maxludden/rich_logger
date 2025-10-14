@@ -1,4 +1,4 @@
-# Rich Logger
+# Rich_Log
 
 Rich Logger is a colourful, batteries-included wrapper around [`loguru`](https://github.com/Delgan/loguru) that pairs vibrant Rich-rendered output with sensible defaults for long-running scripts, batch jobs, and tooling.
 
@@ -11,12 +11,12 @@ Rich Logger is a colourful, batteries-included wrapper around [`loguru`](https:/
 
 ### Install via [uv](https://uv.run)(Recommended):
 ```sh
-uv add rich_logger
+uv add rich_log
 ```
 
 ### Install via pip:
 ```sh
-pip install rich_logger
+pip install rich_log
 ```
 
  ### If you are developing locally, install in editable mode:
