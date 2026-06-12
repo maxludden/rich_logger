@@ -1,128 +1,139 @@
-# Rich_Log
+# Rich Logger
 
-Rich Logger is a colourful, batteries-included wrapper around [`loguru`](https://github.com/Delgan/loguru) that pairs vibrant Rich-rendered output with sensible defaults for long-running scripts, batch jobs, and tooling.
+Rich Logger is a drop-in wrapper around [`loguru.logger`](https://github.com/Delgan/loguru) that renders console logs as Rich panels while preserving Loguru's sink system.
 
-- Drop-in replacement for `loguru.logger` with Rich panels, gradients, and progress bars.
-- Automatically captures plain-text logs alongside the colourful console output.
-- Tracks successive runs and annotates log files with run metadata.
-- Easily configurable via a Python API or `RICH_LOGGER_*` environment variables.
+- `from rich_logger import logger` is the canonical API.
+- `from rich_logger import log` remains as a compatibility alias.
+- Rich renderables are shown as renderables in the default console panel sink.
+- Files, JSON logs, callable sinks, async sinks, and other Loguru sinks receive plain text messages.
 
 ## Installation
 
-### Install via [uv](https://uv.run)(Recommended):
 ```sh
-uv add rich_log
+pip install rich-logger
 ```
 
-### Install via pip:
-```sh
-pip install rich_log
-```
-
- ### If you are developing locally, install in editable mode:
+For local development:
 
 ```sh
-uv pip install -e .
+python -m pip install -e .
 ```
 
 ## Quick Start
 
 ```python
-# main.py
-from rich_logger import log
+from rich_logger import logger
+
 
 def main() -> None:
-    log.info("Hello, colourful world!")
-    log.success("All systems go")
+    """Run a small logging example."""
+    logger.info("Hello, colourful world!")
+    logger.success("All systems go")
+
 
 if __name__ == "__main__":
     main()
 ```
 
-By default, the package:
+By default, Rich Logger removes Loguru's default stderr sink and adds a Rich console sink that renders each message in a panel. The panel includes the level, module/function, and timestamp.
 
-- creates a Rich-powered console logger;
-- writes colour-stripped messages to `logs/trace.log`;
-- tracks run numbers in `logs/run.txt` and displays them in panel subtitles.
+## Rich Renderables
 
-## Advanced Usage
-
-### Custom configuration
-
-Use `rich_logger.LoggerConfig` to customise behaviour programmatically:
+Any object that implements Rich's render protocol can be logged directly.
 
 ```python
-from rich_logger import LoggerConfig, setup_logger
+from rich.panel import Panel
+from rich.table import Table
+from rich_logger import logger
 
-config = LoggerConfig(
+logger.info(Panel("Rendered inside the log panel", title="Rich object"))
+
+table = Table("Name", "Role")
+table.add_row("Ada", "Engineer")
+logger.info(table)
+```
+
+The default Rich sink receives the original object. Other Loguru sinks receive plain text rendered from that object.
+
+## Loguru Sinks
+
+Use `logger.add()` exactly as you would with Loguru.
+
+```python
+from pathlib import Path
+
+from rich.panel import Panel
+from rich_logger import logger
+
+path = Path("app.log")
+handler_id = logger.add(path, format="{level} | {message}", level="INFO")
+
+logger.info(Panel("This appears as plain text in app.log", title="File sink"))
+logger.remove(handler_id)
+```
+
+Callable, async, file-like, standard-library handler, serialized, rotation, retention, and compression sinks are forwarded to Loguru.
+
+## Configuration
+
+Use `setup_logger()` when you want to replace the default console, level, padding, expansion, or plain-text render width.
+
+```python
+from rich.console import Console
+from rich_logger import RichLoggerConfig, setup_logger
+
+console = Console(width=120)
+config = RichLoggerConfig(
+    console=console,
     level="DEBUG",
-    verbose=True,
-    padding=(1, 4),
-    additional_sinks=[
-        {"sink": "logs/errors.log", "level": "ERROR", "format": "{time} | {message}"},
-    ],
+    panel_padding=(1, 2),
+    panel_expand=True,
+    render_width=100,
 )
 
-log = setup_logger(config)
-log.debug("Initialised with custom configuration")
+logger = setup_logger(config)
+logger.debug("Configured logger")
 ```
 
-You can also override configuration via environment variables. Prefix every option with `RICH_LOGGER_` (custom prefixes are supported when instantiating `LoggerConfig` manually):
-
-| Variable | Description | Default |
-| --- | --- | --- |
-| `RICH_LOGGER_LEVEL` | Log level string or integer (`TRACE`, `INFO`, `30`, …) | `INFO` |
-| `RICH_LOGGER_VERBOSE` | Enable verbose mode (`true/false`) | `false` |
-| `RICH_LOGGER_TRACK_RUN` | Track and persist run counts (`true/false`) | `true` |
-| `RICH_LOGGER_RECORD` | Record console output for post-processing (`true/false`) | `false` |
-| `RICH_LOGGER_SHOW_LOCALS` | Display locals in tracebacks (`true/false`) | `false` |
-| `RICH_LOGGER_PADDING` | Panel padding as `"top bottom"` or `"top,bottom"` | `1 2` |
-| `RICH_LOGGER_EXPAND` | Expand panels to console width (`true/false`) | `true` |
-| `RICH_LOGGER_LOGS_DIR` | Directory for trace logs and run file | project `logs/` |
-| `RICH_LOGGER_RUN_FILE` | Override the run counter file path | `<logs>/run.txt` |
-| `RICH_LOGGER_ADDITIONAL_SINKS` | JSON list/dict describing extra Loguru handlers | `[]` |
-
-Example (`.env` or shell):
-
-```bash
-export RICH_LOGGER_LEVEL=DEBUG
-export RICH_LOGGER_ADDITIONAL_SINKS='[{"sink": "logs/warnings.log", "level": "WARNING"}]'
-python main.py
-```
-
-### Direct API access
-
-All of the lower-level building blocks live in `rich_logger.core.logger`. Import them directly if you need the bespoke components:
-
-- `get_console()` – obtain the shared Rich console.
-- `get_progress()` – create a Rich progress bar wired to the logger console.
-- `get_logger()` – build a configured Loguru logger with custom sinks.
-- `trace_sink()` – retrieve the configuration dict for the trace log handler.
+For a temporary logger without configuring the default Rich sink:
 
 ```python
-from rich_logger.core.logger import get_console, get_progress
+from rich_logger import get_logger
 
-console = get_console()
-with get_progress(console) as progress:
-    task = progress.add_task("Processing", total=5)
-    for _ in range(5):
-        # do work
-        progress.advance(task)
+logger = get_logger(configure_default_sink=False)
+logger.remove()
+handler_id = logger.add("plain.log", format="{message}")
+logger.info("Only written to plain.log")
+logger.remove(handler_id)
 ```
 
-## Project Structure
+## Chaining
 
-- `rich_logger/core` contains the implementation, including configuration helpers and the Rich sink.
-- The top-level `logger.py` module re-exports the core functionality for backwards compatibility (e.g. `import logger`).
-- `logs/` houses generated run counts and trace files (created at runtime).
+`bind()`, `opt()`, and `patch()` return `RichLogger` instances, so Rich renderable support survives chained Loguru calls.
 
-## Contributing
+```python
+from rich.panel import Panel
+from rich_logger import logger
 
-1. Fork / clone the repository.
-2. Install dependencies with `pip install -e .`.
-3. Run the test suite (add tests for new behaviour).
-4. Submit a pull request describing your changes and how to verify them.
+logger.bind(request_id="abc").opt(depth=0).info(Panel("Still rendered"))
+```
 
-## License
+## Public API
 
-This project is released under the MIT License. See `LICENSE` for details.
+- `logger`: canonical Rich Logger instance.
+- `log`: alias to `logger`.
+- `RichLogger`: Loguru-compatible wrapper class.
+- `RichSink`: callable Loguru sink that renders records as Rich panels.
+- `RichLoggerConfig`: typed configuration object.
+- `setup_logger()`: configure and return the shared logger.
+- `get_logger()`: build a configured logger wrapper.
+- `get_console()`: get or replace the shared Rich console.
+- `render_plain()`: convert a Rich renderable to plain text.
+
+## Development
+
+```sh
+.venv/bin/python -m pytest
+```
+
+The project currently targets Python 3.14 and depends on Loguru 0.7.3 and Rich 15.0.0.

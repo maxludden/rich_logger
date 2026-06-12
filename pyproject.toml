@@ -1,24 +1,11 @@
 [project]
-name = "rich-loguru"
+name = "rich-logger"
 version = "0.1.0"
-description = "A Rich-enhanced drop-in replacement for loguru.logger"
-authors = [{ name = "Max Ludden", email = "dev@maxludden.com" }]
-requires-python = ">=3.11"
+description = "Rich-backed drop-in wrapper for loguru.logger"
+readme = "README.md"
+requires-python = ">=3.14"
 dependencies = [
-    "loguru>=0.7.2",
-    "rich>=13.7.0",
-    "rich-color-ext>=0.1.4",
-    "rich-gradient>=0.3.6",
-]
-
-[build-system]
-requires = ["setuptools>=68.0"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-where = ["."]
-
-[tool.pylint.'MESSAGES CONTROL']
-disable = [
-    "W0603", #global-statement
+    "loguru>=0.7.3",
+    "rich>=15.0.0",
+    "rich-gradient>=0.3.13",
 ]

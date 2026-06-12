@@ -1,61 +1,49 @@
-"""Example of dynamic logger configuration updates."""
+"""Example showing Rich Logger reconfiguration."""
 
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import Any
+from io import StringIO
+from pathlib import Path
+import sys
 
-import loguru
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import rich_loguru.logger as logger_module
-from rich_loguru import log, setup_logger
-from rich_loguru.config import LoggerConfig
-from rich_loguru.logger import get_console
+from rich.console import Console
+from rich.panel import Panel
+
+from rich_logger import RichLogger, RichLoggerConfig, setup_logger
 
 
-def update_logger_config(**kwargs: Any) -> loguru.Logger:
-    """
-    Dynamically update logger configuration.
-
-    Args:
-        **kwargs: Configuration parameters to update
+def build_recording_logger() -> tuple[RichLogger, Console]:
+    """Create a logger that writes Rich output to an in-memory console.
 
     Returns:
-        loguru.Logger: The reconfigured logger instance
+        A configured logger and the recording console it uses.
     """
-    # Get current config or create default
-    current_config: LoggerConfig | None = getattr(logger_module, "_logger_config", None)
-    if current_config is None:
-        current_config = LoggerConfig()
-
-    # Create new config with updates
-    new_config: LoggerConfig = replace(current_config, **kwargs)
-
-    # Reconfigure logger
-    return setup_logger(new_config)
+    buffer = StringIO()
+    console = Console(file=buffer, record=True, width=100)
+    config = RichLoggerConfig(console=console, level="DEBUG", panel_padding=(1, 2))
+    return setup_logger(config), console
 
 
 def main() -> None:
-    """Demonstrate dynamic configuration updates."""
+    """Demonstrate runtime configuration and Rich renderable logging."""
+    logger, console = build_recording_logger()
 
-    # Initial logging
-    log.info("Initial configuration")
-
-    # Update to enable recording and verbose mode
-    updated_log: loguru.Logger = update_logger_config(
-        record=True, verbose=True, level="DEBUG"
+    logger.debug("Debug output is visible after reconfiguration")
+    logger.info(Panel("Rich renderables are preserved in the console sink"))
+    handler_id = logger.add(
+        "logs/dynamic-config.log",
+        format="{level} | {message}",
+        level="INFO",
     )
+    try:
+        logger.info(Panel("This message is plain text in the file sink"))
+    finally:
+        logger.remove(handler_id)
 
-    updated_log.debug("Debug message with new config")
-    updated_log.info("Info message with recording enabled")
-
-    # Update console settings directly
-    get_console(show_locals=True)
-    updated_log.info("Console now shows locals in tracebacks")
-
-    # Monkey patch specific settings
-    logger_module.VERBOSE = False
-    updated_log.info("Verbose mode disabled via monkey patch")
+    console.export_text(clear=False)
 
 
 if __name__ == "__main__":
